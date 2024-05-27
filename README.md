@@ -1,1 +1,2 @@
-"# video_player_pyqt6" 
+# video_player_pyqt6
+一个使用PyQt6开发的视频播放器，主要用来熟悉PyQt6中的视频播放组件。
