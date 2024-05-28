@@ -60,14 +60,17 @@ class Ui_MainWindow(object):
         self.verticalLayout.addLayout(self.horizontalLayout)
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout()
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
-        self.lb_progress = QtWidgets.QLabel(parent=self.centralwidget)
-        self.lb_progress.setObjectName("lb_progress")
-        self.horizontalLayout_2.addWidget(self.lb_progress)
         self.sl_progress = QtWidgets.QSlider(parent=self.centralwidget)
         self.sl_progress.setMaximum(100)
         self.sl_progress.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self.sl_progress.setObjectName("sl_progress")
         self.horizontalLayout_2.addWidget(self.sl_progress)
+        self.lb_progress = QtWidgets.QLabel(parent=self.centralwidget)
+        self.lb_progress.setObjectName("lb_progress")
+        self.horizontalLayout_2.addWidget(self.lb_progress)
+
+        self.horizontalLayout_2.setStretch(0, 8)
+        self.horizontalLayout_2.setStretch(1, 2)
         self.verticalLayout.addLayout(self.horizontalLayout_2)
         self.verticalLayout.setStretch(0, 10)
         self.verticalLayout.setStretch(1, 1)
@@ -88,6 +91,7 @@ class Ui_MainWindow(object):
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        self.btn_open.setText(_translate("MainWindow", "打开"))
         self.btn_start.setText(_translate("MainWindow", "播放"))
         self.btn_pause.setText(_translate("MainWindow", "暂停"))
         self.btn_stop.setText(_translate("MainWindow", "停止"))

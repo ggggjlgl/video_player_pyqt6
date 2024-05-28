@@ -1,7 +1,7 @@
 import os
 
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QStyle, QFileDialog
+from PyQt6.QtWidgets import QApplication, QMainWindow, QStyle, QFileDialog
 from PyQt6.QtCore import Qt, QUrl, QEvent
 
 from common import show_error
@@ -14,15 +14,14 @@ class PlayerWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.set_icon()
         self.setWindowTitle('视频播放器')
-        # self.setWindowOpacity(0.9)
         self.player = QMediaPlayer(self)
         self.audio = QAudioOutput()
         self.player.setVideoOutput(self.video)
         self.player.setAudioOutput(self.audio)
-        self.muted = False
-        self.vol = 0
-        self.progress = 0
+        self.cur_seconds = 0
+        self.total_seconds = 0
         self.bind()
+        self.sl_vol.setValue(20)
 
     def playing_file(self) -> str:
         return self.player.source().fileName()
@@ -30,21 +29,24 @@ class PlayerWindow(QMainWindow, Ui_MainWindow):
     def is_playing(self):
         return self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
 
-    def on_pause(self):
+    def is_on_pause(self):
         return self.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
 
+    def is_stopped(self):
+        return self.player.playbackState() == QMediaPlayer.PlaybackState.StoppedState
+
     def get_status_text_pre_fix(self):
+        sep = '    '
         play_status = ''
         if self.is_playing():
-            play_status = f'正在播放：{self.playing_file()}\t'
-        elif self.on_pause():
-            play_status = '已暂停'
+            play_status = f'正在播放：{self.playing_file()}{sep}'
+        elif self.is_on_pause():
+            play_status = f'已暂停{sep}'
 
-        full_screen_status = '全屏：开启\t' if self.video.isFullScreen() else ''
-        muted_status = '静音：开启\t' if self.muted else ''
-        vol_status = f'音量：{self.vol}\t'
-        progress_status = f'进度：{self.progress}\t' if self.is_playing() else ''
-        return f'{play_status}{full_screen_status}{muted_status}{vol_status}{progress_status}'
+        full_screen_status = f'全屏：开启{sep}' if self.video.isFullScreen() else ''
+        muted_status = f'静音：开启{sep}' if self.audio.isMuted() else ''
+        vol_status = '' if self.audio.isMuted() else f'音量：{int(self.audio.volume() * 100)}%{sep}'
+        return f'{play_status}{full_screen_status}{muted_status}{vol_status}'
 
     def update_status_bar(self, info=''):
         if info:
@@ -67,28 +69,57 @@ class PlayerWindow(QMainWindow, Ui_MainWindow):
         self.btn_stop.clicked.connect(self.stop)
         self.btn_vol.clicked.connect(self.click_volume)
         self.btn_full_screen.clicked.connect(self.fullscreen)
-        self.sl_vol.valueChanged.connect(self.set_volume)
-        self.sl_progress.valueChanged.connect(self.set_progress)
+        self.sl_vol.valueChanged.connect(self.vol_changed)
+        self.sl_progress.valueChanged.connect(self.sl_progress_changed)
         self.video.installEventFilter(self)
+        self.player.durationChanged.connect(self.duration_changed)
+        self.player.positionChanged.connect(self.position_changed)
+        self.player.playbackStateChanged.connect(self.play_state_changed)
 
-    def play(self):
+    def play_state_changed(self):
         if self.is_playing():
+            self.btn_start.setEnabled(False)
+            self.btn_pause.setEnabled(True)
+            self.btn_stop.setEnabled(True)
+        elif self.is_on_pause():
+            self.btn_start.setEnabled(True)
+            self.btn_pause.setEnabled(False)
+            self.btn_stop.setEnabled(True)
+        elif self.is_stopped():
+            self.btn_start.setEnabled(True)
+            self.btn_pause.setEnabled(True)
+            self.btn_stop.setEnabled(False)
+
+    def update_progress_label(self):
+        total_minutes, total_seconds = divmod(self.total_seconds, 60)
+        current_minutes, current_seconds = divmod(self.cur_seconds, 60)
+        progress_text = f'{current_minutes}:{current_seconds} / {total_minutes}:{total_seconds}'
+        self.lb_progress.setText(progress_text)
+
+    def duration_changed(self, new_duration: int):
+        seconds = new_duration // 1000
+        self.total_seconds = seconds
+        self.sl_progress.setMaximum(self.total_seconds)
+        self.cur_seconds = 0
+        self.update_progress_label()
+
+    def position_changed(self, new_position: int):
+        if self.sl_progress.isSliderDown():
             return
-        if self.player.source().isEmpty() or (not self.player.source().isValid()):
-            show_error(self, '请先选择需要播放的文件')
-            return
-        self.player.play()
-        self.update_status_bar()
+        seconds = new_position // 1000
+        self.cur_seconds = seconds
+        self.sl_progress.setSliderPosition(self.cur_seconds)
+        self.update_progress_label()
 
     def closeEvent(self, _event):
-        if self.is_playing():
+        if self.is_playing() or self.is_on_pause():
             self.player.stop()
 
     def eventFilter(self, to_catch, event: QEvent):
         if to_catch != self.video:
             return super().eventFilter(to_catch, event)
         if event.type() == QEvent.Type.MouseButtonPress:
-            if event.button == Qt.MouseButton.Left:
+            if event.button() == Qt.MouseButton.LeftButton:
                 self.switch()
         if event.type() == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Escape:
@@ -108,14 +139,26 @@ class PlayerWindow(QMainWindow, Ui_MainWindow):
                                              filter='视频文件(*.wmv *.avi *.mp4 *.mov);;所有文件(*.*)')
         if os.path.isfile(tmp):
             self.player.setSource(QUrl.fromLocalFile(tmp))
-            self.update_status_bar()
+            self.play()
 
-    def set_volume(self, vol):
-        self.vol = vol
+    def vol_changed(self, vol):
+        self.audio.setVolume(vol / 100)
         self.update_status_bar()
 
-    def set_progress(self, progress):
-        self.progress = progress
+    def sl_progress_changed(self, progress):
+
+        if not self.sl_progress.isSliderDown():
+            return
+        self.cur_seconds = progress
+        self.player.setPosition(self.cur_seconds * 1000)
+
+    def play(self):
+        if self.is_playing():
+            return
+        if self.player.source().isEmpty() or (not self.player.source().isValid()):
+            show_error(self, '请先选择需要播放的文件')
+            return
+        self.player.play()
         self.update_status_bar()
 
     def pause(self):
@@ -124,12 +167,12 @@ class PlayerWindow(QMainWindow, Ui_MainWindow):
         self.update_status_bar()
 
     def stop(self):
-        if self.is_playing() or self.on_pause():
+        if self.is_playing() or self.is_on_pause():
             self.player.stop()
         self.update_status_bar()
 
     def click_volume(self):
-        self.muted = not self.muted
+        self.audio.setMuted(not self.audio.isMuted())
         self.set_vol_icon()
         self.update_status_bar()
 
@@ -137,7 +180,7 @@ class PlayerWindow(QMainWindow, Ui_MainWindow):
         self.video.setFullScreen(not self.video.isFullScreen())
 
     def set_vol_icon(self):
-        if self.muted:
+        if self.audio.isMuted():
             self.btn_vol.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolumeMuted))
         else:
             self.btn_vol.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume))
